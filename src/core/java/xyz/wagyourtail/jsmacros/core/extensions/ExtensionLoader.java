@@ -19,14 +19,11 @@ import java.util.stream.Stream;
 
 public class ExtensionLoader {
     private final Set<Extension> extensions = new HashSet<>();
-    private final Set<LanguageExtension> languageExtensions = new HashSet<>();
-    private final Set<LibraryExtension> libraryExtensions = new HashSet<>();
-
     private final Core<?, ?> core;
 
     private ExtensionClassLoader classLoader;
 
-    private LanguageExtension highestPriorityExtension;
+    private Extension highestPriorityExtension;
 
     private boolean loadingDone;
 
@@ -34,26 +31,26 @@ public class ExtensionLoader {
 
     public ExtensionLoader(Core<?, ?> core) {
         this.core = core;
-        this.extPath = core.config.configFolder.toPath().resolve("Extensions");
+        this.extPath = core.config.configFolder.toPath().resolve("LanguageExtensions");
     }
 
     public boolean isExtensionLoaded(String name) {
         if (notLoaded()) {
             loadExtensions();
         }
-        return extensions.stream().anyMatch(e -> e.getExtensionName().equals(name));
+        return extensions.stream().anyMatch(e -> e.getLanguageImplName().equals(name));
     }
 
     public boolean notLoaded() {
         return !loadingDone;
     }
 
-    public LanguageExtension getHighestPriorityExtension() {
+    public Extension getHighestPriorityExtension() {
         if (notLoaded()) {
             loadExtensions();
         }
         if (highestPriorityExtension == null) {
-            highestPriorityExtension = languageExtensions.stream().max(Comparator.comparingInt(LanguageExtension::getPriority)).orElse(null);
+            highestPriorityExtension = extensions.stream().max(Comparator.comparingInt(Extension::getPriority)).orElse(null);
         }
         return highestPriorityExtension;
     }
@@ -65,44 +62,30 @@ public class ExtensionLoader {
         return extensions;
     }
 
-    public Set<LanguageExtension> getAllLanguageExtensions() {
+    public @Nullable Extension getExtensionForFile(File file) {
         if (notLoaded()) {
             loadExtensions();
         }
-        return languageExtensions;
-    }
-
-    public Set<LibraryExtension> getAllLibraryExtensions() {
-        if (notLoaded()) {
-            loadExtensions();
-        }
-        return libraryExtensions;
-    }
-
-    public @Nullable LanguageExtension getExtensionForFile(File file) {
-        if (notLoaded()) {
-            loadExtensions();
-        }
-        List<Pair<LanguageExtension.ExtMatch, LanguageExtension>> extensions = this.languageExtensions.stream().map(e -> new Pair<>(e.extensionMatch(file), e)).filter(p -> p.getT().isMatch()).collect(Collectors.toList());
+        List<Pair<Extension.ExtMatch, Extension>> extensions = this.extensions.stream().map(e -> new Pair<>(e.extensionMatch(file), e)).filter(p -> p.getT().isMatch()).collect(Collectors.toList());
         if (extensions.size() > 1) {
-            List<Pair<LanguageExtension.ExtMatch, LanguageExtension>> extensionsByName = extensions.stream().filter(p -> p.getT() == LanguageExtension.ExtMatch.MATCH_WITH_NAME).collect(Collectors.toList());
-            if (!extensionsByName.isEmpty()) {
+            List<Pair<Extension.ExtMatch, Extension>> extensionsByName = extensions.stream().filter(p -> p.getT() == Extension.ExtMatch.MATCH_WITH_NAME).collect(Collectors.toList());
+            if (extensionsByName.size() > 0) {
                 extensionsByName.sort(Comparator.comparingInt(e -> -e.getU().getPriority()));
                 return extensionsByName.get(0).getU();
             }
         }
-        if (!extensions.isEmpty()) {
+        if (extensions.size() > 0) {
             extensions.sort(Comparator.comparingInt(e -> -e.getU().getPriority()));
             return extensions.get(0).getU();
         }
         return null;
     }
 
-    public Extension getExtensionForName(String extName) {
+    public Extension getExtensionForName(String lang) {
         if (notLoaded()) {
             loadExtensions();
         }
-        return extensions.stream().filter(e -> e.getExtensionName().equals(extName)).findFirst().orElse(null);
+        return extensions.stream().filter(e -> e.getLanguageImplName().equals(lang)).findFirst().orElse(null);
     }
 
     public synchronized void loadExtensions() {
@@ -158,50 +141,37 @@ public class ExtensionLoader {
 
         // load extensions
         extensions.addAll(ServiceLoader.load(Extension.class, classLoader)
-            .stream()
-            .map(ServiceLoader.Provider::get)
-            .collect(Collectors.toSet()));
+                .stream()
+                .map(ServiceLoader.Provider::get)
+                .collect(Collectors.toSet()));
 
         System.out.println("Loaded " + extensions.size() + " extensions");
 
         // load extension deps
         for (Extension extension : extensions) {
-            try {
-                Set<URL> deps = extension.getDependencies();
-                if (deps.isEmpty()) {
-                    System.out.println("No dependencies for extension: " + extension.getClass().getName());
+            Set<URL> deps = extension.getDependencies();
+            if (deps.isEmpty()) {
+                System.out.println("No dependencies for extension: " + extension.getClass().getName());
+            }
+            for (URL lib : deps) {
+                // copy resource to dependencies folder
+                Path path = dependenciesPath.resolve(lib.getPath().substring(lib.getPath().lastIndexOf('/') + 1));
+                try (InputStream stream = lib.openStream()) {
+                    Files.write(path, stream.readAllBytes(), StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
+                    System.out.println("Extracted dependency " + path);
+                    classLoader.addURL(path.toUri().toURL());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
                 }
-                for (URL lib : deps) {
-                    // copy resource to dependencies folder
-                    Path path = dependenciesPath.resolve(lib.getPath().substring(lib.getPath().lastIndexOf('/') + 1));
-                    try (InputStream stream = lib.openStream()) {
-                        Files.write(path, stream.readAllBytes(), StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
-                        System.out.println("Extracted dependency " + path);
-                        classLoader.addURL(path.toUri().toURL());
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to load extension dependencies for: " + extension.getExtensionName(), e);
             }
         }
         Thread.currentThread().setContextClassLoader(classLoader);
         for (Extension extension : extensions) {
-            try {
-                extension.init();
-                if (extension instanceof LibraryExtension libExt) {
-                    libraryExtensions.add(libExt);
-                    for (Class<? extends BaseLibrary> lib : libExt.getLibraries()) {
-                        core.libraryRegistry.addLibrary(lib);
-                    }
-                }
-                if (extension instanceof LanguageExtension langExt) {
-                    languageExtensions.add(langExt);
-                }
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to load extension: " + extension.getExtensionName(), e);
+            for (Class<? extends BaseLibrary> lib : extension.getLibraries()) {
+                core.libraryRegistry.addLibrary(lib);
             }
+
+            extension.init();
         }
         loadingDone = true;
     }
@@ -210,7 +180,7 @@ public class ExtensionLoader {
         if (notLoaded()) {
             loadExtensions();
         }
-        return languageExtensions.stream().anyMatch(e -> e.isGuestObject(obj));
+        return extensions.stream().anyMatch(e -> e.isGuestObject(obj));
     }
 
 }

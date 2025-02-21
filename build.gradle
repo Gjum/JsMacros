@@ -86,8 +86,6 @@ sourceSets {
 unimined.useGlobalCache = false
 
 unimined.minecraft {
-    combineWith(":core")
-
     version project.minecraft_version
 
     mappings {
@@ -152,8 +150,7 @@ dependencies {
     coreImplementation "com.neovisionaries:nv-websocket-client:2.14"
     coreImplementation 'org.javassist:javassist:3.30.2-GA'
 
-    jsmacrosExtensionInclude(project(":extension:graal")) { transitive = false }
-    jsmacrosExtensionInclude(project(":extension:graal:js")) { transitive = false }
+    jsmacrosExtensionInclude(project(":javascript_extension")) { transitive = false }
 
     if (enabled_loaders.contains("fabric")) {
 
@@ -177,8 +174,12 @@ dependencies {
         fabricModImplementation "com.terraformersmc:modmenu:${project.modmenu_version}"
         fabricModImplementation fabricApi.fabricModule("fabric-screen-api-v1", project.fapi_version)
 
-        fabricRuntimeOnly(project(":extension:graal"))
-        fabricRuntimeOnly(project(":extension:graal:js"))
+        fabricRuntimeOnly(project(":javascript_extension")) { transitive = false }
+        fabricRuntimeOnly "org.graalvm.sdk:graal-sdk:${project.graal_version}"
+        fabricRuntimeOnly "org.graalvm.polyglot:js:${project.graal_version}"
+        fabricRuntimeOnly "org.graalvm.truffle:truffle-api:${project.graal_version}"
+        fabricRuntimeOnly "org.graalvm.regex:regex:${project.graal_version}"
+
     }
 
     if (enabled_loaders.contains("forge")) {
@@ -191,8 +192,11 @@ dependencies {
         forgeInclude "org.jooq:joor:0.9.15"
 
 
-        forgeRuntimeOnly(project(":extension:graal"))
-        forgeRuntimeOnly(project(":extension:graal:js"))
+        forgeRuntimeOnly(project(":javascript_extension")) { transitive = false }
+        forgeRuntimeOnly "org.graalvm.sdk:graal-sdk:${project.graal_version}"
+        forgeRuntimeOnly "org.graalvm.polyglot:js:${project.graal_version}"
+        forgeRuntimeOnly "org.graalvm.truffle:truffle-api:${project.graal_version}"
+        forgeRuntimeOnly "org.graalvm.regex:regex:${project.graal_version}"
 
     }
 }
@@ -233,8 +237,7 @@ if (enabled_loaders.contains("forge")) {
 
 
     forgeJar {
-        dependsOn(":extension:graal:jar")
-        dependsOn(":extension:graal:js:jar")
+        dependsOn(":javascript_extension:jar")
         archiveClassifier = "forge-dev"
         from sourceSets.forge.output, sourceSets.main.output, sourceSets.core.output
 
@@ -288,8 +291,7 @@ if (enabled_loaders.contains("fabric")) {
     }
 
     fabricJar {
-        dependsOn(":extension:graal:jar")
-        dependsOn(":extension:graal:js:jar")
+        dependsOn(":javascript_extension:jar")
         from sourceSets.fabric.output, sourceSets.main.output, sourceSets.core.output
 
         preserveFileTimestamps = false

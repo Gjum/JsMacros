@@ -10,7 +10,6 @@ import xyz.wagyourtail.jsmacros.core.event.BaseEvent;
 import xyz.wagyourtail.jsmacros.core.event.BaseEventRegistry;
 import xyz.wagyourtail.jsmacros.core.extensions.Extension;
 import xyz.wagyourtail.jsmacros.core.extensions.ExtensionLoader;
-import xyz.wagyourtail.jsmacros.core.extensions.LanguageExtension;
 import xyz.wagyourtail.jsmacros.core.language.BaseScriptContext;
 import xyz.wagyourtail.jsmacros.core.language.BaseWrappedException;
 import xyz.wagyourtail.jsmacros.core.language.EventContainer;
@@ -133,7 +132,7 @@ public class Core<T extends BaseProfile, U extends BaseEventRegistry> {
                                   Consumer<Throwable> catcher) {
 
         final File file = new File(this.config.macroFolder, macro.scriptFile);
-        LanguageExtension l = extensions.getExtensionForFile(file);
+        Extension l = extensions.getExtensionForFile(file);
         if (l == null) {
             l = extensions.getHighestPriorityExtension();
         }
@@ -151,7 +150,7 @@ public class Core<T extends BaseProfile, U extends BaseEventRegistry> {
      * @since 1.7.0
      */
     public EventContainer<?> exec(String lang, String script, File fakeFile, BaseEvent event, Runnable then, Consumer<Throwable> catcher) {
-        LanguageExtension l = extensions.getExtensionForFile(fakeFile != null ? fakeFile : new File(lang.startsWith(".") ? lang : "." + lang));
+        Extension l = extensions.getExtensionForFile(new File(lang.startsWith(".") ? lang : "." + lang));
         assert l != null;
         return l.getLanguage(this).trigger(lang, script, fakeFile, event, then, catcher);
     }
@@ -166,7 +165,7 @@ public class Core<T extends BaseProfile, U extends BaseEventRegistry> {
         if (ex == null) {
             return null;
         }
-        for (LanguageExtension lang : Core.getInstance().extensions.getAllLanguageExtensions()) {
+        for (Extension lang : Core.getInstance().extensions.getAllExtensions()) {
             BaseWrappedException<?> e = lang.wrapException(ex);
             if (e != null) {
                 return e;
